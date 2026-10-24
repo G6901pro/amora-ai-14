@@ -1,0 +1,6 @@
+{
+  "name": "Amora - AI Girlfriend & Romantic Companion",
+  "description": "An immersive, affectionate fictional girlfriend chat featuring natural roleplay, emotional memory, and character personalities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

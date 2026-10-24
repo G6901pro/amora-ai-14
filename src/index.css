@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+/* =========================================================================
+   EMOTION-AWARE AMBIENT BACKGROUND ANIMATIONS
+   Subtle, hardware-accelerated CSS keyframes for Amora AI companions
+   ========================================================================= */
+
+@keyframes heartbeat-pulse {
+  0%, 100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.65;
+  }
+  14% {
+    transform: translate(-50%, 0) scale(1.08);
+    opacity: 0.95;
+  }
+  28% {
+    transform: translate(-50%, 0) scale(1.01);
+    opacity: 0.72;
+  }
+  42% {
+    transform: translate(-50%, 0) scale(1.06);
+    opacity: 0.90;
+  }
+  70% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.65;
+  }
+}
+
+@keyframes happy-glow {
+  0%, 100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.68;
+  }
+  50% {
+    transform: translate(-50%, -8px) scale(1.07);
+    opacity: 0.95;
+  }
+}
+
+@keyframes playful-sway {
+  0%, 100% {
+    transform: translate(-50%, 0) rotate(0deg) scale(1);
+    opacity: 0.7;
+  }
+  33% {
+    transform: translate(calc(-50% + 10px), -6px) rotate(1.2deg) scale(1.05);
+    opacity: 0.92;
+  }
+  66% {
+    transform: translate(calc(-50% - 10px), 6px) rotate(-1.2deg) scale(0.98);
+    opacity: 0.85;
+  }
+}
+
+@keyframes calm-drift {
+  0%, 100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(-50%, 4px) scale(1.04);
+    opacity: 0.82;
+  }
+}
+
+@keyframes shy-blush {
+  0%, 100% {
+    transform: translate(-50%, 0) scale(0.98);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate(-50%, -4px) scale(1.04);
+    opacity: 0.9;
+  }
+}
+
+@keyframes curious-orbit {
+  0%, 100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.65;
+  }
+  50% {
+    transform: translate(-50%, -6px) scale(1.06);
+    opacity: 0.9;
+  }
+}
+
+@keyframes sadness-mist {
+  0%, 100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate(-50%, 8px) scale(1.02);
+    opacity: 0.72;
+  }
+}
+
+@keyframes anger-tension {
+  0%, 100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate(-50%, 0) scale(1.05);
+    opacity: 0.88;
+  }
+}
+
+@keyframes neutral-breathe {
+  0%, 100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 0.58;
+  }
+  50% {
+    transform: translate(-50%, -4px) scale(1.04);
+    opacity: 0.8;
+  }
+}
+
+.animate-heartbeat-pulse {
+  animation: heartbeat-pulse 3.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-happy-glow {
+  animation: happy-glow 2.8s ease-in-out infinite;
+}
+
+.animate-playful-sway {
+  animation: playful-sway 4.5s ease-in-out infinite;
+}
+
+.animate-calm-drift {
+  animation: calm-drift 5.6s ease-in-out infinite;
+}
+
+.animate-shy-blush {
+  animation: shy-blush 3.6s ease-in-out infinite;
+}
+
+.animate-curious-orbit {
+  animation: curious-orbit 4.0s ease-in-out infinite;
+}
+
+.animate-sadness-mist {
+  animation: sadness-mist 5.0s ease-in-out infinite;
+}
+
+.animate-anger-tension {
+  animation: anger-tension 2.4s ease-in-out infinite;
+}
+
+.animate-neutral-breathe {
+  animation: neutral-breathe 4.8s ease-in-out infinite;
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .animate-heartbeat-pulse,
+  .animate-happy-glow,
+  .animate-playful-sway,
+  .animate-calm-drift,
+  .animate-shy-blush,
+  .animate-curious-orbit,
+  .animate-sadness-mist,
+  .animate-anger-tension,
+  .animate-neutral-breathe {
+    animation: none !important;
+    transform: translate(-50%, 0) !important;
+  }
+}

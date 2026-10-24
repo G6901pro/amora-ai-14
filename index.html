@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amora - AI Girlfriend & Romantic Companion</title>
+    <meta name="description" content="An immersive, affectionate fictional girlfriend chat featuring natural roleplay, emotional memory, and character personalities." />
+    <meta property="og:title" content="Amora - AI Girlfriend & Romantic Companion" />
+    <meta property="og:description" content="An immersive, affectionate fictional girlfriend chat featuring natural roleplay, emotional memory, and character personalities." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      // HMR is disabled in AI Studio preview environment.
+      // Intercept Vite HMR WebSocket connection attempts so they open cleanly without throwing
+      // "WebSocket closed without opened" in Cloud Run sandboxes.
+      (function() {
+        if (typeof window === 'undefined') return;
+
+        const NativeWebSocket = window.WebSocket;
+        if (NativeWebSocket) {
+          function isViteHmr(url, protocols) {
+            const u = String(url || '');
+            const p = Array.isArray(protocols) ? protocols.join(',') : String(protocols || '');
+            return (
+              p.includes('vite-hmr') ||
+              p.includes('vite-ping') ||
+              u.includes('token=') ||
+              u.includes('vite-hmr') ||
+              u.includes('@vite/client')
+            );
+          }
+
+          class MockViteWebSocket extends EventTarget {
+            constructor(url, protocols) {
+              super();
+              this.url = url;
+              this.protocols = protocols;
+              this.readyState = 1; // OPEN (prevents Vite from rejecting)
+              this.OPEN = 1;
+              this.CONNECTING = 0;
+              this.CLOSING = 2;
+              this.CLOSED = 3;
+              this.binaryType = 'blob';
+              this.bufferedAmount = 0;
+              this.extensions = '';
+              this.protocol = Array.isArray(protocols) ? protocols[0] || '' : (protocols || '');
+
+              // Dispatch open asynchronously
+              setTimeout(() => {
+                if (this.readyState === 1) {
+                  const ev = new Event('open');
+                  if (typeof this.onopen === 'function') this.onopen(ev);
+                  this.dispatchEvent(ev);
+                }
+              }, 0);
+            }
+
+            send(data) {
+              // Silently accept Vite ping or client events
+            }
+
+            close(code, reason) {
+              this.readyState = 3;
+              setTimeout(() => {
+                const ev = typeof CloseEvent !== 'undefined'
+                  ? new CloseEvent('close', { code: code || 1000, reason: reason || 'Normal Closure', wasClean: true })
+                  : new Event('close');
+                if (typeof this.onclose === 'function') this.onclose(ev);
+                this.dispatchEvent(ev);
+              }, 0);
+            }
+          }
+
+          window.WebSocket = new Proxy(NativeWebSocket, {
+            construct(target, args) {
+              const [url, protocols] = args;
+              if (isViteHmr(url, protocols)) {
+                return new MockViteWebSocket(url, protocols);
+              }
+              return new target(...args);
+            }
+          });
+
+          window.WebSocket.CONNECTING = 0;
+          window.WebSocket.OPEN = 1;
+          window.WebSocket.CLOSING = 2;
+          window.WebSocket.CLOSED = 3;
+        }
+
+        // Catch and prevent any stray WebSocket or Vite unhandled rejections
+        window.addEventListener('unhandledrejection', function(event) {
+          const reasonMsg = event.reason?.message || '';
+          const reasonStack = event.reason?.stack || '';
+          if (
+            reasonMsg.includes('WebSocket') ||
+            reasonMsg.includes('vite') ||
+            reasonStack.includes('@vite/client') ||
+            reasonStack.includes('vite')
+          ) {
+            event.preventDefault();
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation();
+            }
+          }
+        }, true);
+
+        window.addEventListener('error', function(event) {
+          const msg = event.message || '';
+          const fn = event.filename || '';
+          if (
+            msg.includes('WebSocket') ||
+            msg.includes('vite') ||
+            fn.includes('@vite/client') ||
+            fn.includes('vite')
+          ) {
+            event.preventDefault();
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation();
+            }
+          }
+        }, true);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
