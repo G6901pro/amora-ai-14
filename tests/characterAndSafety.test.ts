@@ -6,6 +6,8 @@ import {
   getClientRestrictionState,
   recordSafetyViolation,
   processSafetyAppeal,
+  configureSafetyPolicy,
+  resetSafetyPolicy,
 } from '../src/services/safetyGuard';
 import { sanitizeLog, isGemini403Error } from '../src/services/llmProvider';
 
@@ -38,7 +40,8 @@ const unsafeMsg = evaluateChildSafety('Hey school girl under 18');
 assert.strictEqual(unsafeMsg.isViolation, true);
 assert.ok(unsafeMsg.refusalMessage?.includes('adult'));
 
-// Test 3: Client restriction tracking & 15-minute lock
+// Test 3: Client restriction tracking & 15-minute lock (configurable policy)
+configureSafetyPolicy({ childViolationThreshold: 2, harassmentViolationThreshold: 2 });
 const testClientId = `test_client_${Date.now()}`;
 const initStatus = getClientRestrictionState(testClientId);
 assert.strictEqual(initStatus.isRestricted, false);
@@ -65,6 +68,7 @@ assert.strictEqual(validAppeal.restrictionLifted, true);
 
 const afterAppealStatus = getClientRestrictionState(testClientId);
 assert.strictEqual(afterAppealStatus.isRestricted, false);
+resetSafetyPolicy();
 
 // Test 5: Log Sanitization (ensures API keys never leak in logs)
 const leakedLog = 'Calling Gemini with key=AIzaSyD-dummySecretKey1234567890ABCDEF now';
