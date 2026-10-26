@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "tsx server.ts",
-    "test": "tsx tests/avatarAnimation.test.ts && tsx tests/conversation.test.ts && tsx tests/characterAndSafety.test.ts",
+    "test": "tsx tests/avatarAnimation.test.ts && tsx tests/conversation.test.ts && tsx tests/characterAndSafety.test.ts && tsx tests/sexualHealthAndSafetyGraduated.test.ts && tsx tests/repetitionAndPipeline.test.ts && tsx tests/boundaryAndContextIntelligence.test.ts && tsx tests/freeTierAndBanglaIntelligence.test.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },

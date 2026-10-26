@@ -225,6 +225,7 @@ export interface SafetyRestrictionState {
   restrictedUntil?: number;
   remainingSeconds?: number;
   reason?: string;
+  category?: 'child_sexual_content' | 'adult_sexual_harassment';
   appealAvailable?: boolean;
 }
 
@@ -310,8 +311,14 @@ export interface MomentCard {
 export interface ProviderHealthState {
   ok: boolean;
   status: 'healthy' | 'degraded' | 'offline';
-  geminiConfigured: boolean;
-  geminiModel: string;
-  circuitBreakerOpen: boolean;
+  provider?: string;
+  model?: string;
+  isFree?: boolean;
+  freeTierStatus?: string;
+  description?: string;
+  geminiConfigured?: boolean;
+  geminiModel?: string;
+  geminiFreeTierStatus?: string;
+  circuitBreakerOpen?: boolean;
   recentError?: string;
 }

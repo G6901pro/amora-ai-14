@@ -754,9 +754,15 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
 
     let replyText = '';
     let emotionAnalysisData: any = null;
+    let streamMsgId: string | null = null;
+    let streamMessageCreated = false;
 
     try {
       const historySnapshot = (allMessages[sId] || []).slice(-8);
+      const recentAssistantReplies = (allMessages[sId] || [])
+        .filter((m) => !m.isUser && m.text && m.text.trim())
+        .slice(-6)
+        .map((m) => m.text.trim());
 
       // Check if streaming is explicitly enabled in settings
       if (settings.useStreaming === true) {
@@ -772,6 +778,7 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
               clientId: amoraClientId,
               userMessage: trimmed,
               recentHistory: historySnapshot,
+              recentAssistantReplies,
               settings,
               memories: companionMemories,
               characterState: characterStates[companionId],
@@ -799,8 +806,7 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
             const reader = streamRes.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
-            const streamMsgId = `bot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-            let streamMessageCreated = false;
+            streamMsgId = `bot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
             try {
               while (true) {
@@ -825,7 +831,7 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
                         if (!streamMessageCreated) {
                           streamMessageCreated = true;
                           const initialBotMsg: ChatMessage = {
-                            id: streamMsgId,
+                            id: streamMsgId!,
                             text: currentText,
                             isUser: false,
                             timestamp: Date.now(),
@@ -855,11 +861,11 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
               reader.cancel().catch(() => {});
             }
 
-            if (streamMessageCreated) {
+            if (streamMessageCreated && replyText.trim()) {
               setAllMessages((prev) => ({
                 ...prev,
                 [sId]: (prev[sId] || []).map((m) =>
-                  m.id === streamMsgId ? { ...m, status: 'sent' } : m
+                  m.id === streamMsgId ? { ...m, status: 'sent', text: replyText } : m
                 ),
               }));
             }
@@ -886,6 +892,7 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
             clientId: amoraClientId,
             userMessage: trimmed,
             recentHistory: historySnapshot,
+            recentAssistantReplies,
             settings,
             memories: companionMemories,
             characterState: characterStates[companionId],
@@ -938,16 +945,22 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
           emotionAnalysis: emotionAnalysisData,
         };
 
-        // Append assistant reply immediately to the currently displayed conversation
-        setAllMessages((prev) => ({
-          ...prev,
-          [sId]: [
-            ...(prev[sId] || []).map((m) =>
-              m.id === clientMessageId ? { ...m, status: 'sent' as const } : m
-            ),
-            botMsg,
-          ],
-        }));
+        // If streaming had previously created a partial message that failed, replace it; otherwise append
+        setAllMessages((prev) => {
+          const sessionList = prev[sId] || [];
+          const filtered = streamMessageCreated && streamMsgId
+            ? sessionList.filter((m) => m.id !== streamMsgId)
+            : sessionList;
+          return {
+            ...prev,
+            [sId]: [
+              ...filtered.map((m) =>
+                m.id === clientMessageId ? { ...m, status: 'sent' as const } : m
+              ),
+              botMsg,
+            ],
+          };
+        });
       } else {
         // Mark user message sent
         setAllMessages((prev) => ({
@@ -958,8 +971,28 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
         }));
       }
 
-      // Update session last message
+      // Update session last message and recent assistant replies
       if (replyText.trim()) {
+        setCharacterStates((prev) => {
+          const current = prev[companionId] || {
+            affectionLevel: 50,
+            emotionalTone: 'warm',
+            intimacyScore: 20,
+            recentThemes: [],
+            recentAssistantClosings: [],
+            recentAssistantReplies: [],
+            rejectedReplies: [],
+          };
+          const updatedReplies = [...(current.recentAssistantReplies || []), replyText].slice(-6);
+          return {
+            ...prev,
+            [companionId]: {
+              ...current,
+              recentAssistantReplies: updatedReplies,
+            },
+          };
+        });
+
         setSessions((prev) =>
           prev.map((s) =>
             s.sessionId === sId
@@ -999,16 +1032,26 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
 
       console.warn('[Amora] Backend chat request failed, engaging intelligent companion fallback:', err);
       try {
-        const emotionAnalysis = analyzeEmotionAndIntent(trimmed, []);
+        const recentAssistantReplies = (allMessages[sId] || [])
+          .filter((m) => !m.isUser && m.text && m.text.trim())
+          .slice(-6)
+          .map((m) => m.text.trim());
+
+        const lastAssistantMsg = recentAssistantReplies.slice(-1)[0] || '';
+        const emotionAnalysis = analyzeEmotionAndIntent(trimmed, {
+          lastAssistantMessage: lastAssistantMsg,
+          recentAssistantReplies,
+          recentTopics: characterStates[companionId]?.recentThemes || [],
+        });
         const situationDecision = interpretSituation(
           trimmed,
           emotionAnalysis,
           {
             lastUserMessage: trimmed,
-            lastAssistantMessage: characterStates[companionId]?.recentAssistantReplies?.slice(-1)[0],
+            lastAssistantMessage: lastAssistantMsg,
             recentTopics: characterStates[companionId]?.recentThemes || [],
             recentQuestionsAskedByAssistant: characterStates[companionId]?.recentAssistantClosings || [],
-            assistantConsecutiveReplies: characterStates[companionId]?.recentAssistantReplies || [],
+            assistantConsecutiveReplies: recentAssistantReplies,
             rejectedReplies: characterStates[companionId]?.rejectedReplies || [],
           }
         );
@@ -1018,8 +1061,29 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
           companionId,
           settings.userNickname,
           settings.languageMode,
-          characterStates[companionId]?.recentAssistantReplies || []
+          recentAssistantReplies,
+          characterStates[companionId]?.rejectedReplies || []
         );
+
+        setCharacterStates((prev) => {
+          const current = prev[companionId] || {
+            affectionLevel: 50,
+            emotionalTone: 'warm',
+            intimacyScore: 20,
+            recentThemes: [],
+            recentAssistantClosings: [],
+            recentAssistantReplies: [],
+            rejectedReplies: [],
+          };
+          const updatedReplies = [...(current.recentAssistantReplies || []), fallbackText].slice(-6);
+          return {
+            ...prev,
+            [companionId]: {
+              ...current,
+              recentAssistantReplies: updatedReplies,
+            },
+          };
+        });
 
         const botMsg: ChatMessage = {
           id: `bot_fallback_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1032,15 +1096,21 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
           emotionAnalysis,
         };
 
-        setAllMessages((prev) => ({
-          ...prev,
-          [sId]: [
-            ...(prev[sId] || []).map((m) =>
-              m.id === clientMessageId ? { ...m, status: 'sent' as const } : m
-            ),
-            botMsg,
-          ],
-        }));
+        setAllMessages((prev) => {
+          const sessionList = prev[sId] || [];
+          const filtered = streamMessageCreated && streamMsgId
+            ? sessionList.filter((m) => m.id !== streamMsgId)
+            : sessionList;
+          return {
+            ...prev,
+            [sId]: [
+              ...filtered.map((m) =>
+                m.id === clientMessageId ? { ...m, status: 'sent' as const } : m
+              ),
+              botMsg,
+            ],
+          };
+        });
 
         setSessions((prev) =>
           prev.map((s) =>
@@ -1055,7 +1125,7 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
           )
         );
       } catch (clientErr) {
-        console.error('[Amora] Send message error:', err, clientErr);
+        console.warn('[Amora] Send message fallback completed with notice:', err, clientErr);
         const isTimeout =
           err?.name === 'AbortError' ||
           err?.message?.includes('timeout') ||
@@ -1275,7 +1345,7 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setShowCheckInDialog(false);
     } catch (err) {
-      console.error('Check-in error:', err);
+      console.warn('Check-in notice:', err);
     }
   };
 

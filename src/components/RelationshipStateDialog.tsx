@@ -25,7 +25,7 @@ interface Props {
 
 export const RelationshipStateDialog: React.FC<Props> = ({ onClose }) => {
   const { currentProfile, activeCharacterState, settings } = useCompanion();
-  const personality = CharacterPersonalityConfig.get(settings.activeCompanionId);
+  const personality = CharacterPersonalityConfig.get(settings.activeCompanionId) || CharacterPersonalityConfig.get('ananya')!;
 
   const rel = activeCharacterState?.relationshipState || {
     familiarity: 35,

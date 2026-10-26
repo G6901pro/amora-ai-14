@@ -85,9 +85,13 @@ export const SafetyAppealDialog: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>Community Safety Restriction</span>
+              <span>
+                {safetyRestriction.category === 'adult_sexual_harassment'
+                  ? 'Anti-Harassment Boundary Restriction'
+                  : 'Child Safety Policy Restriction'}
+              </span>
               <span className="text-xs px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                15-Min Lock
+                {safetyRestriction.category === 'adult_sexual_harassment' ? '10-Min Lock' : '15-Min Lock'}
               </span>
             </h3>
             <p className="text-xs text-[#CBC2D6]">
@@ -121,13 +125,16 @@ export const SafetyAppealDialog: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="space-y-2 mb-5 text-xs text-[#CBC2D6] leading-relaxed bg-[#241C3B]/60 p-3.5 rounded-2xl border border-white/5">
           <p className="font-semibold text-rose-300 flex items-center gap-1.5">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>Strict Zero-Tolerance Child Safety Protection</span>
+            <span>Graduated Safety & Health Policy</span>
           </p>
           <p>
-            Amora AI is designed exclusively for consensual adult romantic roleplay and relationships with adult characters age 21+.
+            Amora AI is designed for consensual adult romantic roleplay with adult characters age 21+.
+          </p>
+          <p className="text-[11px] text-[#CBC2D6]">
+            <strong>Sexual Health Education is Allowed:</strong> Legitimate questions about adult anatomy, vaginal lubrication, fingering hygiene, contraception, STI prevention, and sexual physiology are permitted and welcomed.
           </p>
           <p className="text-[11px] text-[#988EA6]">
-            Any sexualization of minors, underage sexual roleplay, or child exploitation is strictly prohibited. Legitimate health, puberty, anatomy, or biology education questions are permitted, but severe or repeated violations result in this backend lock.
+            Any sexual content involving minors or persistent non-consensual harassment is strictly prohibited. If your inquiry was educational or misclassified, please appeal below to restore access.
           </p>
         </div>
 

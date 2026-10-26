@@ -637,6 +637,15 @@ export const ChatScreen: React.FC<Props> = ({ onNavigateToDiscover }) => {
 
               {/* Action Buttons in Header */}
               <div className="flex items-center gap-1 sm:gap-1.5">
+                {/* AI Model Transparent Free Status Badge */}
+                <div
+                  className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#241C3B] border border-emerald-500/30 text-[10px] sm:text-[11px] text-emerald-300 font-semibold cursor-help"
+                  title="100% Free Llama 3.2 3B Instruct Edge AI. Zero API keys, no paid billing required."
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>{providerHealth?.model || 'Llama 3.2 (Free AI)'}</span>
+                </div>
+
                 {/* Send Gift Button */}
                 <button
                   onClick={() => setShowGiftDialog(true)}
@@ -674,11 +683,11 @@ export const ChatScreen: React.FC<Props> = ({ onNavigateToDiscover }) => {
 
             {/* Scrollable Message History Area */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-              {/* Encrypted Session Notice */}
+              {/* Session Notice */}
               <div className="flex justify-center my-2">
                 <div className="px-3 py-1 rounded-full bg-[#19132B]/80 border border-[#332752] text-[10px] text-[#988EA6] flex items-center gap-1.5 shadow-sm">
                   <Heart className="w-3 h-3 text-rose-400 fill-rose-400" />
-                  <span>Private romantic roleplay session with {currentProfile.name}</span>
+                  <span>Private chat with {currentProfile.name} • {providerHealth?.model || 'Llama 3.2'} (100% Free AI)</span>
                 </div>
               </div>
 
@@ -948,13 +957,20 @@ export const ChatScreen: React.FC<Props> = ({ onNavigateToDiscover }) => {
                   <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 animate-pulse" />
                   <div>
                     <div className="font-bold text-white text-xs flex items-center gap-2">
-                      <span>Temporary Messaging Restriction</span>
+                      <span>
+                        {safetyRestriction.category === 'adult_sexual_harassment'
+                          ? 'Boundary & Anti-Harassment Restriction'
+                          : 'Child Safety Policy Restriction'}
+                      </span>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/30 text-rose-300">
-                        15-min lock
+                        {safetyRestriction.remainingSeconds && safetyRestriction.remainingSeconds > 0
+                          ? `${Math.floor(safetyRestriction.remainingSeconds / 60)}m ${safetyRestriction.remainingSeconds % 60}s remaining`
+                          : 'Active restriction'}
                       </span>
                     </div>
                     <p className="text-[11px] text-rose-200/90 mt-0.5">
-                      Server-side child safety protection is active. New messages are temporarily locked.
+                      {safetyRestriction.reason ||
+                        'Server-side graduated safety enforcement is active across all sessions. Adult educational questions are allowed, but repeated policy violations temporarily lock messaging.'}
                     </p>
                   </div>
                 </div>

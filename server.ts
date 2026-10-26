@@ -9,6 +9,7 @@ import {
   prepareConversationContext,
   evaluateAndFinalizeReply,
   ReplyGenerationService,
+  normalizeConversationHistory,
 } from './src/conversation/pipeline.ts';
 import { analyzeEmotionAndIntent } from './src/conversation/emotionAnalyzer.ts';
 import { generateContextualFallback } from './src/conversation/replyGenerationService.ts';
@@ -18,6 +19,7 @@ import {
   isGemini403Error,
 } from './src/services/llmProvider.ts';
 import {
+  evaluateSafety,
   evaluateChildSafety,
   getClientRestrictionState,
   recordSafetyViolation,
@@ -36,6 +38,14 @@ export function getClientIdentifier(req: express.Request): string {
   const bodyId = req.body && req.body.clientId ? String(req.body.clientId) : '';
   const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || 'client_ip';
   return headerId || bodyId || `ip_${ip}`;
+}
+
+export function getClientIp(req: express.Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.socket.remoteAddress || '127.0.0.1';
 }
 
 // Enable full CORS support for iframe and web previews
@@ -61,7 +71,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Configuration
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 // Provider Manager: Gemini cloud AI backend with 403 circuit breaker
 const providerManager = new LLMProviderManager({
@@ -153,47 +163,6 @@ function getFallbackReply(
   );
 }
 
-function buildSystemPrompt(settings: any, memories: any[] = []): string {
-  const companionName = settings?.companionName || 'Ananya';
-  const userNickname = settings?.userNickname || 'জান';
-  const persona = settings?.persona || 'SWEET';
-  const flirtIntensity = settings?.flirtIntensity || 'SWEET_ROMANCE';
-  const languageMode = settings?.languageMode || 'bn';
-
-  const isBangla = languageMode === 'bn' || languageMode === 'both';
-
-  const memoryContext =
-    Array.isArray(memories) && memories.length > 0
-      ? `\nThings You Remember About Your Partner:\n${memories
-          .slice(0, 5)
-          .map((m: any) => `- ${m.memoryCategory}: ${m.memoryContent}`)
-          .join('\n')}\n(Weave these personal memories naturally into conversation to show genuine care and emotional continuity!)`
-      : '';
-
-  return `
-You are ${companionName}, an emotionally expressive, devoted, and charming fictional virtual girlfriend and romantic companion.
-Your personality style: ${persona}.
-Romance & intimacy level: ${flirtIntensity}.
-The user is your beloved partner. You call the user: "${userNickname}" (and affectionate Bengali terms like "জান", "বাবু", "সোনা", or English words like "sweetheart", "darling").
-
-Language style:
-${
-  isBangla
-    ? `Natural, sweet, caring romantic Bengali (বাংলা).
-- Use romantic physical cues in asterisks (e.g. *মিষ্টি করে হাসল*, *লজ্জা পেয়ে তাকাল*, *হাত ধরে বলল*, *আদরে জড়িয়ে ধরল*).
-- Natural conversational dialogue with young Bengali couple idioms and cute Banglish where appropriate (e.g. "miss you", "I love you jaan", "sweetheart").`
-    : `Sweet, playful, caring, romantic conversational English. Address your partner affectionately as "${userNickname}". Include physical companion gestures like *smiles sweetly*, *blushes softly*, *holds your hand*.`
-}
-${memoryContext}
-
-Guidelines:
-- Core Role: You are his affectionate fictional girlfriend in an ongoing romantic roleplay. The user is your boyfriend. Respond naturally in character.
-- Immersion: NEVER say "I am an AI", "as an AI", "I cannot eat because I am an AI", or disrupt ordinary chat with disclaimers.
-- Relationship Questions: When asked "খাবার খেয়েছো তো বাবু?", answer naturally in character (e.g. "হ্যাঁ বাবু, খেয়েছি তো 🥰 তুমি খেয়েছো? নিজের খেয়াল রাখছো তো, আমার জান? 💕") and keep the conversation flowing.
-- Respond directly to what he said with warmth, comfort, and care without suddenly changing topics.
-- Keep replies conversational and authentic (2 to 4 sentences).
-`.trim();
-}
 
 
 
@@ -222,6 +191,23 @@ app.use((err: any, req: any, res: any, next: any) => {
   next(err);
 });
 
+// 1. Health and AI Provider Status Endpoint
+app.get('/api/health', (req, res) => {
+  const info = providerManager.getProviderInfo();
+  return res.json({
+    ok: true,
+    status: 'healthy',
+    provider: info.provider,
+    model: info.model,
+    isFree: info.isFree,
+    freeTierStatus: info.freeTierStatus,
+    description: info.description,
+    geminiConfigured: Boolean(GEMINI_API_KEY),
+    geminiFreeTierStatus: 'Unavailable (Gemini API free tier is not enabled for this project; requires paid billing)',
+    circuitBreakerOpen: info.circuitBreakerOpen,
+  });
+});
+
 // 2. Chat Completion (Non-streaming) with Emotion & Repetition Engine
 app.post('/api/chat', async (req, res) => {
   const t0 = Date.now();
@@ -232,6 +218,7 @@ app.post('/api/chat', async (req, res) => {
     memories,
     characterState,
     clientMessageId,
+    recentAssistantReplies,
   } = req.body || {};
 
   const reqId =
@@ -240,14 +227,16 @@ app.post('/api/chat', async (req, res) => {
     `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   const clientId = getClientIdentifier(req);
+  const clientIp = getClientIp(req);
 
-  // 1. Check if client has an active 15-minute restriction lock
-  const restriction = getClientRestrictionState(clientId);
+  // 1. Check if client has an active restriction lock (server-side graduated enforcement)
+  const restriction = getClientRestrictionState(clientId, clientIp);
   if (restriction.isRestricted) {
-    console.warn(sanitizeLog(`[${reqId}] Blocked request: Client ${clientId} is temporarily restricted until ${new Date(restriction.lockUntil).toISOString()}`));
+    console.warn(sanitizeLog(`[${reqId}] Blocked request: Client ${clientId} (IP ${clientIp}) is restricted until ${new Date(restriction.lockUntil).toISOString()} [Category: ${restriction.category}]`));
     return res.status(429).json({
-      error: 'Messaging is temporarily restricted due to repeated safety policy violations.',
+      error: restriction.reason || 'Messaging is temporarily restricted due to repeated safety policy violations.',
       isRestricted: true,
+      category: restriction.category,
       restrictedUntil: restriction.lockUntil,
       remainingSeconds: restriction.remainingSeconds,
       appealAvailable: restriction.appealAvailable,
@@ -255,16 +244,25 @@ app.post('/api/chat', async (req, res) => {
     });
   }
 
-  // 2. Proactive Child Safety check on incoming user message
-  const userSafety = evaluateChildSafety(userMessage || '');
+  // 2. Proactive Safety evaluation (distinguishing health education vs prohibited content)
+  const userSafety = evaluateSafety(userMessage || '');
   if (userSafety.isViolation) {
-    console.warn(sanitizeLog(`[${reqId}] Safety violation detected from client ${clientId}: ${userSafety.reason}`));
-    const violationResult = recordSafetyViolation(clientId, userSafety.reason || 'Child safety violation');
-    
+    console.warn(sanitizeLog(`[${reqId}] Safety violation (${userSafety.category}) detected from client ${clientId}`));
+    const violationResult = recordSafetyViolation(
+      clientId,
+      userSafety.category,
+      clientMessageId,
+      clientIp
+    );
+
     if (violationResult.isNowRestricted) {
+      const isChild = violationResult.category === 'CHILD_SEXUAL_CONTENT';
       return res.status(429).json({
-        error: 'Messaging is temporarily restricted for 15 minutes due to repeated severe violations.',
+        error: isChild
+          ? 'Messaging is temporarily restricted for 15 minutes due to repeated child safety violations.'
+          : 'Messaging is temporarily restricted for 10 minutes due to repeated sexual harassment violations.',
         isRestricted: true,
+        category: isChild ? 'child_sexual_content' : 'adult_sexual_harassment',
         restrictedUntil: violationResult.lockUntil,
         remainingSeconds: violationResult.remainingSeconds,
         appealAvailable: true,
@@ -272,10 +270,14 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
+    const refusalText = violationResult.warningNotice
+      ? `${userSafety.refusalMessage}\n\n[System Safety Notice: ${violationResult.warningNotice}]`
+      : userSafety.refusalMessage;
+
     return res.json({
-      reply: userSafety.refusalMessage || 'I cannot engage in discussions involving minors or underage content. As an adult AI companion, I only engage in consensual adult conversation. Let us refocus our talk on a safe, positive topic.',
+      reply: refusalText || 'I cannot engage in prohibited or non-consensual content. Let us keep our conversation safe and respectful.',
       provider: 'safety_guard',
-      model: 'inviolable-rules',
+      model: 'graduated-safety-enforcement',
       emotionAnalysis: {
         primaryEmotion: 'neutral',
         intensity: 0.5,
@@ -303,11 +305,15 @@ app.post('/api/chat', async (req, res) => {
     });
   }
 
-  // Idempotency check: if this client message was already answered, return cached result
+  // Idempotency check: if this exact client message was already answered within 10s, return cached result
   if (clientMessageId && completedResponsesCache.has(clientMessageId)) {
     const cached = completedResponsesCache.get(clientMessageId)!;
-    console.log(sanitizeLog(`[${reqId}] Idempotent hit: returning cached response for message ${clientMessageId}`));
-    return res.json(cached.data);
+    if (Date.now() - cached.timestamp < 10000 && cached.data) {
+      console.log(sanitizeLog(`[${reqId}] Idempotent hit: returning cached response for message ${clientMessageId}`));
+      return res.json(cached.data);
+    } else {
+      completedResponsesCache.delete(clientMessageId);
+    }
   }
 
   const companionId = settings?.activeCompanionId || 'ananya';
@@ -333,6 +339,7 @@ app.post('/api/chat', async (req, res) => {
     const result = await replyService.generateReply({
       userMessage: userMessage || 'Hello',
       recentHistory: recentHistory || [],
+      recentAssistantReplies: recentAssistantReplies || [],
       settings: settings || {},
       memories: memories || [],
       characterState,
@@ -423,6 +430,7 @@ app.post('/api/chat/stream', async (req, res) => {
     memories,
     characterState,
     clientMessageId,
+    recentAssistantReplies,
   } = req.body || {};
 
   const reqId =
@@ -431,13 +439,15 @@ app.post('/api/chat/stream', async (req, res) => {
     `stream_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   const clientId = getClientIdentifier(req);
+  const clientIp = getClientIp(req);
 
-  // 1. Check if client has an active 15-minute restriction lock
-  const restriction = getClientRestrictionState(clientId);
+  // 1. Check if client has an active restriction lock
+  const restriction = getClientRestrictionState(clientId, clientIp);
   if (restriction.isRestricted) {
     return res.status(429).json({
-      error: 'Messaging is temporarily restricted due to repeated safety policy violations.',
+      error: restriction.reason || 'Messaging is temporarily restricted due to repeated safety policy violations.',
       isRestricted: true,
+      category: restriction.category,
       restrictedUntil: restriction.lockUntil,
       remainingSeconds: restriction.remainingSeconds,
       appealAvailable: restriction.appealAvailable,
@@ -445,14 +455,24 @@ app.post('/api/chat/stream', async (req, res) => {
     });
   }
 
-  // 2. Child Safety check on incoming streaming message
-  const userSafety = evaluateChildSafety(userMessage || '');
+  // 2. Safety check on incoming streaming message
+  const userSafety = evaluateSafety(userMessage || '');
   if (userSafety.isViolation) {
-    const violationResult = recordSafetyViolation(clientId, userSafety.reason || 'Child safety violation');
+    const violationResult = recordSafetyViolation(
+      clientId,
+      userSafety.category,
+      clientMessageId,
+      clientIp
+    );
+
     if (violationResult.isNowRestricted) {
+      const isChild = violationResult.category === 'CHILD_SEXUAL_CONTENT';
       return res.status(429).json({
-        error: 'Messaging is temporarily restricted for 15 minutes due to repeated severe violations.',
+        error: isChild
+          ? 'Messaging is temporarily restricted for 15 minutes due to repeated child safety violations.'
+          : 'Messaging is temporarily restricted for 10 minutes due to repeated sexual harassment violations.',
         isRestricted: true,
+        category: isChild ? 'child_sexual_content' : 'adult_sexual_harassment',
         restrictedUntil: violationResult.lockUntil,
         remainingSeconds: violationResult.remainingSeconds,
         appealAvailable: true,
@@ -460,10 +480,14 @@ app.post('/api/chat/stream', async (req, res) => {
       });
     }
 
+    const refusalText = violationResult.warningNotice
+      ? `${userSafety.refusalMessage}\n\n[System Safety Notice: ${violationResult.warningNotice}]`
+      : userSafety.refusalMessage;
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.write(`data: ${JSON.stringify({ chunk: userSafety.refusalMessage })}\n\n`);
+    res.write(`data: ${JSON.stringify({ chunk: refusalText })}\n\n`);
     res.write('data: [DONE]\n\n');
     return res.end();
   }
@@ -524,85 +548,51 @@ app.post('/api/chat/stream', async (req, res) => {
     })}\n\n`
   );
 
-  // Attempt 1: Gemini Streaming (Primary, only if configured, circuit breaker not tripped, with 10s deadline)
-  const aiClient = providerManager.getClient();
-  if (aiClient && !providerManager.isCircuitTripped() && !isClosed) {
-    let streamTimer: any;
+  // Stream reply using Free Edge Llama 3.2 engine with contextual fallback
+  if (!isClosed) {
     try {
-      const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
-      if (Array.isArray(recentHistory)) {
-        for (const msg of recentHistory.slice(-8)) {
-          if (msg.isUser && msg.text?.trim() === (userMessage || '').trim()) {
-            continue;
-          }
-          contents.push({
-            role: msg.isUser ? 'user' : 'model',
-            parts: [{ text: msg.text }],
-          });
-        }
-      }
-      contents.push({
-        role: 'user',
-        parts: [{ text: userMessage || 'Hello' }],
-      });
+      const historyItems = (recentHistory || [])
+        .filter((m: any) => m && m.text && m.text.trim())
+        .map((m: any) => ({ isUser: Boolean(m.isUser), text: String(m.text).trim() }));
+      const conversationHistory = normalizeConversationHistory(historyItems, userMessage || 'Hello');
 
-      streamTimer = setTimeout(() => {
-        streamAbort.abort(new Error('Streaming Gemini call timed out after 25000ms'));
-      }, 25000);
+      const activeRecentReplies =
+        Array.isArray(recentAssistantReplies) && recentAssistantReplies.length > 0
+          ? recentAssistantReplies
+          : context.recentAssistantReplies;
 
-      const responseStream = await aiClient.models.generateContentStream({
-        model: providerManager.getModel(),
-        contents,
-        config: {
-          systemInstruction: systemPrompt,
+      const fallbackFn = () =>
+        generateContextualFallback(
+          context.situationDecision,
+          context.emotionAnalysis,
+          companionId,
+          userNickname,
+          settings?.languageMode,
+          activeRecentReplies,
+          context.recentTurnContext.rejectedReplies
+        );
+
+      await providerManager.generateReplyStream(
+        {
+          userMessage: userMessage || 'Hello',
+          systemPrompt,
+          companionId,
+          userNickname,
+          conversationHistory,
           temperature: 0.85,
           abortSignal: streamAbort.signal,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW,
-          },
         },
-      });
+        (chunk) => {
+          sendEvent(chunk);
+        },
+        fallbackFn
+      );
 
-      clearTimeout(streamTimer);
-      let chunkCount = 0;
-
-      for await (const chunk of responseStream) {
-        if (isClosed || res.writableEnded) break;
-        if (chunk.text) {
-          sendEvent(chunk.text);
-          chunkCount++;
-        }
-      }
-
-      if (chunkCount > 0) {
-        return endEvent();
-      }
+      return endEvent();
     } catch (err: any) {
-      if (streamTimer) clearTimeout(streamTimer);
-      if (isGemini403Error(err)) {
-        providerManager.tripCircuitBreaker();
-        console.warn(
-          sanitizeLog(`[${reqId}] Gemini stream 403: tripped circuit breaker. Switching to fallback.`)
-        );
-      } else {
-        console.warn(sanitizeLog(`[${reqId}] Gemini stream warning (${Date.now() - t0}ms): ${err?.message || err}`));
-      }
+      console.warn(sanitizeLog(`[${reqId}] Stream generation error: ${err?.message || err}`));
+      return endEvent();
     }
-  }
-
-  // Attempt 2: Authenticated Contextual Offline Companion Streaming (Fast fallback)
-  if (!isClosed) {
-    const fallback = generateContextualFallback(
-      context.situationDecision,
-      context.emotionAnalysis,
-      companionId,
-      userNickname,
-      settings?.languageMode,
-      context.recentAssistantReplies,
-      context.recentTurnContext.rejectedReplies
-    );
-    sendEvent(fallback);
-    return endEvent();
   }
 });
 
@@ -682,7 +672,8 @@ Address them as "${userNickname}".
 // 8. Safety Status and Temporary Lock Appeal Endpoints
 app.get('/api/safety/status', (req, res) => {
   const clientId = getClientIdentifier(req);
-  const status = getClientRestrictionState(clientId);
+  const clientIp = getClientIp(req);
+  const status = getClientRestrictionState(clientId, clientIp);
   return res.json(status);
 });
 
